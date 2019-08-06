@@ -40,6 +40,7 @@ verbose = []
 "socket-udp" = []
 "socket-tcp" = []
 "socket-icmp" = []
+"socket-accept-all" = []
 "proto-dhcpv4" = ["proto-ipv4"]
 default = [
   "std", "log", # needed for `cargo test --no-default-features --features default` :/

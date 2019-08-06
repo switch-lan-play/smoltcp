@@ -243,6 +243,8 @@ pub struct TcpSocket<'a> {
     /// The number of packets recived directly after
     /// each other which have the same ACK number.
     local_rx_dup_acks: u8,
+    #[cfg(feature = "socket-accept-all")]
+    accept_all: bool,
 }
 
 const DEFAULT_MSS: usize = 536;
@@ -290,7 +292,21 @@ impl<'a> TcpSocket<'a> {
             remote_last_ts:  None,
             local_rx_last_ack: None,
             local_rx_dup_acks: 0,
+            #[cfg(feature = "socket-accept-all")]
+            accept_all       : false,
         }
+    }
+
+    /// Set socket to accept all incoming connection when listening.
+    #[cfg(feature = "socket-accept-all")]
+    pub fn set_accept_all(&mut self, accept_all: bool) {
+        self.accept_all = accept_all;
+    }
+
+    /// Return accpet all.
+    #[cfg(feature = "socket-accept-all")]
+    pub fn accept_all(&self) -> bool {
+        self.accept_all
     }
 
     /// Return the socket handle.
@@ -854,6 +870,13 @@ impl<'a> TcpSocket<'a> {
         // be destined to this socket, but another one may well listen on the same
         // local endpoint.
         if self.state == State::Listen && repr.ack_number.is_some() { return false }
+
+        #[cfg(feature = "socket-accept-all")]
+        {
+            if self.state == State::Listen && self.accept_all {
+                return true;
+            }
+        }
 
         // Reject packets with a wrong destination.
         if self.local_endpoint.port != repr.dst_port { return false }
