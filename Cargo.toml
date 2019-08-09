@@ -43,6 +43,7 @@ ethernet = []
 "socket-tcp" = []
 "socket-icmp" = []
 "socket-accept-all" = []
+"arp-fake-subnet" = []
 default = [
   "std", "log", # needed for `cargo test --no-default-features --features default` :/
   "ethernet",
