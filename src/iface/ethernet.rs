@@ -681,6 +681,14 @@ impl<'b, 'c, 'e> InterfaceInner<'b, 'c, 'e> {
     }
 
     /// Check whether the interface has the given IP address assigned.
+    #[cfg(feature = "arp-fake-subnet")]
+    fn has_ip_addr<T: Into<IpAddress>>(&self, addr: T) -> bool {
+        let addr = addr.into();
+        self.ip_addrs.iter().any(|probe| probe.contains_addr(&addr))
+    }
+
+    /// Check whether the interface has the given IP address assigned.
+    #[cfg(not(feature = "arp-fake-subnet"))]
     fn has_ip_addr<T: Into<IpAddress>>(&self, addr: T) -> bool {
         let addr = addr.into();
         self.ip_addrs.iter().any(|probe| probe.address() == addr)
@@ -758,9 +766,11 @@ impl<'b, 'c, 'e> InterfaceInner<'b, 'c, 'e> {
                 operation, source_hardware_addr, source_protocol_addr, target_protocol_addr, ..
             } => {
                 if source_protocol_addr.is_unicast() && source_hardware_addr.is_unicast() {
-                    self.neighbor_cache.fill(source_protocol_addr.into(),
-                                             source_hardware_addr,
-                                             timestamp);
+                    self.neighbor_cache.fill(
+                        source_protocol_addr.into(),
+                        source_hardware_addr,
+                        timestamp
+                    );
                 } else {
                     // Discard packets with non-unicast source addresses.
                     net_debug!("non-unicast source address");
