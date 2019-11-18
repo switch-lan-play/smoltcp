@@ -22,7 +22,9 @@ pub struct UdpSocket<'a, 'b: 'a> {
     rx_buffer: UdpSocketBuffer<'a, 'b>,
     tx_buffer: UdpSocketBuffer<'a, 'b>,
     /// The time-to-live (IPv4) or hop limit (IPv6) value used in outgoing packets.
-    hop_limit: Option<u8>
+    hop_limit: Option<u8>,
+    #[cfg(feature = "socket-accept-all")]
+    accept_all: bool,
 }
 
 impl<'a, 'b> UdpSocket<'a, 'b> {
@@ -34,8 +36,22 @@ impl<'a, 'b> UdpSocket<'a, 'b> {
             endpoint:  IpEndpoint::default(),
             rx_buffer: rx_buffer,
             tx_buffer: tx_buffer,
-            hop_limit: None
+            hop_limit: None,
+            #[cfg(feature = "socket-accept-all")]
+            accept_all       : false,
         }
+    }
+
+    /// Set socket to accept all incoming connection when listening.
+    #[cfg(feature = "socket-accept-all")]
+    pub fn set_accept_all(&mut self, accept_all: bool) {
+        self.accept_all = accept_all;
+    }
+
+    /// Return accpet all.
+    #[cfg(feature = "socket-accept-all")]
+    pub fn accept_all(&self) -> bool {
+        self.accept_all
     }
 
     /// Return the socket handle.
@@ -190,6 +206,13 @@ impl<'a, 'b> UdpSocket<'a, 'b> {
     }
 
     pub(crate) fn accepts(&self, ip_repr: &IpRepr, repr: &UdpRepr) -> bool {
+        #[cfg(feature = "socket-accept-all")]
+        {
+            if self.accept_all {
+                return true;
+            }
+        }
+
         if self.endpoint.port != repr.dst_port { return false }
         if !self.endpoint.addr.is_unspecified() &&
             self.endpoint.addr != ip_repr.dst_addr() &&
