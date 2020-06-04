@@ -461,7 +461,7 @@ impl<'a> TcpSocket<'a> {
     pub fn listen<T>(&mut self, local_endpoint: T) -> Result<()>
             where T: Into<IpEndpoint> {
         let local_endpoint = local_endpoint.into();
-        if local_endpoint.port == 0 { return Err(Error::Unaddressable) }
+        if !self.accept_all && local_endpoint.port == 0 { return Err(Error::Unaddressable) }
 
         if self.is_open() { return Err(Error::Illegal) }
 
