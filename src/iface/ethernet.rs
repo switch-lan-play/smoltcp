@@ -831,6 +831,12 @@ impl<'b, 'c, 'e> InterfaceInner<'b, 'c, 'e> {
                 }
 
                 if operation == ArpOperation::Request && self.has_ip_addr(target_protocol_addr) {
+                    #[cfg(feature = "arp-fake-subnet")]
+                    {
+                        if source_protocol_addr == target_protocol_addr {
+                            return Ok(Packet::None)
+                        }
+                    }
                     Ok(Packet::Arp(ArpRepr::EthernetIpv4 {
                         operation: ArpOperation::Reply,
                         source_hardware_addr: self.ethernet_addr,
