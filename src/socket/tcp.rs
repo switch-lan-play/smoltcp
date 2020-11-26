@@ -461,6 +461,7 @@ impl<'a> TcpSocket<'a> {
     pub fn listen<T>(&mut self, local_endpoint: T) -> Result<()>
             where T: Into<IpEndpoint> {
         let local_endpoint = local_endpoint.into();
+        #[cfg(feature = "socket-accept-all")]
         if !self.accept_all && local_endpoint.port == 0 { return Err(Error::Unaddressable) }
 
         if self.is_open() { return Err(Error::Illegal) }
@@ -4616,6 +4617,136 @@ mod test {
         assert_eq!(r.should_retransmit(Instant::from_millis(1301)), Some(Duration::from_millis(300)));
         r.set_for_idle(Instant::from_millis(1301), None);
         assert_eq!(r.should_retransmit(Instant::from_millis(1350)), None);
+    }
+
+
+    // =========================================================================================//
+    // Tests retransmit
+    // =========================================================================================//
+
+
+
+    #[test]
+    fn test_rx_close_fin_with_hole() {
+        let mut s = socket_established();
+        send!(s, TcpRepr {
+            seq_number: REMOTE_SEQ + 1,
+            ack_number: Some(LOCAL_SEQ + 1),
+            payload:    &b"abc"[..],
+            ..SEND_TEMPL
+        });
+        send!(s, TcpRepr {
+            control:    TcpControl::Fin,
+            seq_number: REMOTE_SEQ + 1 + 6,
+            ack_number: Some(LOCAL_SEQ + 1),
+            payload:    &b"ghi"[..],
+            ..SEND_TEMPL
+        }, Ok(Some(TcpRepr {
+            seq_number: LOCAL_SEQ + 1,
+            ack_number: Some(REMOTE_SEQ + 1 + 3),
+            window_len: 61,
+            ..RECV_TEMPL
+        })));
+        s.recv(|data| {
+            assert_eq!(data, b"abc");
+            (3, ())
+        }).unwrap();
+        s.recv(|data| {
+            assert_eq!(data, b"");
+            (0, ())
+        }).unwrap();
+        send!(s, TcpRepr {
+            control:    TcpControl::Rst,
+            seq_number: REMOTE_SEQ + 1 + 9,
+            ack_number: Some(LOCAL_SEQ + 1),
+            ..SEND_TEMPL
+        });
+        // Error must be `Illegal` even if we've received a FIN,
+        // because we are missing data.
+        assert_eq!(s.recv(|_| (0, ())), Err(Error::Illegal));
+    }
+
+    #[test]
+    fn test_rx_close_rst() {
+        let mut s = socket_established();
+        send!(s, TcpRepr {
+            seq_number: REMOTE_SEQ + 1,
+            ack_number: Some(LOCAL_SEQ + 1),
+            payload:    &b"abc"[..],
+            ..SEND_TEMPL
+        });
+        send!(s, TcpRepr {
+            control:    TcpControl::Rst,
+            seq_number: REMOTE_SEQ + 1 + 3,
+            ack_number: Some(LOCAL_SEQ + 1),
+            ..SEND_TEMPL
+        });
+        s.recv(|data| {
+            assert_eq!(data, b"abc");
+            (3, ())
+        }).unwrap();
+        assert_eq!(s.recv(|_| (0, ())), Err(Error::Illegal));
+    }
+
+    #[test]
+    fn test_rx_close_rst_with_hole() {
+        let mut s = socket_established();
+        send!(s, TcpRepr {
+            seq_number: REMOTE_SEQ + 1,
+            ack_number: Some(LOCAL_SEQ + 1),
+            payload:    &b"abc"[..],
+            ..SEND_TEMPL
+        });
+        send!(s, TcpRepr {
+            seq_number: REMOTE_SEQ + 1 + 6,
+            ack_number: Some(LOCAL_SEQ + 1),
+            payload:    &b"ghi"[..],
+            ..SEND_TEMPL
+        }, Ok(Some(TcpRepr {
+            seq_number: LOCAL_SEQ + 1,
+            ack_number: Some(REMOTE_SEQ + 1 + 3),
+            window_len: 61,
+            ..RECV_TEMPL
+        })));
+        send!(s, TcpRepr {
+            control:    TcpControl::Rst,
+            seq_number: REMOTE_SEQ + 1 + 9,
+            ack_number: Some(LOCAL_SEQ + 1),
+            ..SEND_TEMPL
+        });
+        s.recv(|data| {
+            assert_eq!(data, b"abc");
+            (3, ())
+        }).unwrap();
+        assert_eq!(s.recv(|_| (0, ())), Err(Error::Illegal));
+    }
+
+
+    #[test]
+    fn test_close_wait_no_window_update() {
+        let mut s = socket_established();
+        send!(s, TcpRepr {
+            control: TcpControl::Fin,
+            seq_number: REMOTE_SEQ + 1,
+            ack_number: Some(LOCAL_SEQ + 1),
+            payload: &[1,2,3,4],
+            ..SEND_TEMPL
+        });
+        assert_eq!(s.state, State::CloseWait);
+
+        // we ack the FIN, with the reduced window size.
+        recv!(s, Ok(TcpRepr {
+            seq_number: LOCAL_SEQ + 1,
+            ack_number: Some(REMOTE_SEQ + 6),
+            window_len: 60,
+            ..RECV_TEMPL
+        }));
+
+        let rx_buf = &mut [0; 32];
+        assert_eq!(s.recv_slice(rx_buf), Ok(4));
+
+        // check that we do NOT send a window update even if it has changed.
+        recv!(s, Err(Error::Exhausted));
     }
 
 }
